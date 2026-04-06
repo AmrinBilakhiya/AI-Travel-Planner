@@ -82,8 +82,8 @@ visa_required = st.sidebar.checkbox("🛃 Check Visa Requirements")
 travel_insurance = st.sidebar.checkbox("🛡️ Get Travel Insurance")
 currency_converter = st.sidebar.checkbox("💱 Currency Exchange Rates")
 
-SERPAPI_KEY = "08144ff97c09fa9ff14acde8bf63e209be4f91797e1cca40921fb3fa959fda7d"
-GOOGLE_API_KEY = "AIzaSyBK0UiBs0JRxrWL5kzDd-lXG4-yiJx2Nww"
+SERPAPI_KEY = ""
+GOOGLE_API_KEY = ""
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
 

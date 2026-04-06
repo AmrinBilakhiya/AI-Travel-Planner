@@ -1,5 +1,5 @@
 streamlit
 google-search-results
 agno
-google-generativeai
+google-genai
 python-dotenv

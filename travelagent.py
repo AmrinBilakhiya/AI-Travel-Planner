@@ -75,8 +75,9 @@ visa_required = st.sidebar.checkbox("🛃 Check Visa Requirements")
 travel_insurance = st.sidebar.checkbox("🛡️ Get Travel Insurance")
 currency_converter = st.sidebar.checkbox("💱 Currency Exchange Rates")
 
-SERPAPI_KEY = ""
-GOOGLE_API_KEY = ""
+SERPAPI_KEY = st.secrets["SERPAPI_KEY"]
+GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
 def fetch_flights(source, destination, departure_date, return_date):

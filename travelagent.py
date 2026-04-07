@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 import os
+import time
 from serpapi import GoogleSearch
 from agno.agent import Agent
 from agno.tools.serpapi import SerpApiTools
@@ -18,21 +19,17 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
 st.markdown('<h1 class="title">✈️ AI-Powered Travel Planner</h1>', unsafe_allow_html=True)
 st.markdown('<p class="subtitle">Plan your dream trip with AI! Get personalized recommendations for flights, hotels, and activities.</p>', unsafe_allow_html=True)
-
 st.markdown("### 🌍 Where are you headed?")
 source = st.text_input("🛫 Departure City (IATA Code):", "BOM")
 destination = st.text_input("🛬 Destination (IATA Code):", "DEL")
-
 st.markdown("### 📅 Plan Your Adventure")
 num_days = st.slider("🕒 Trip Duration (days):", 1, 14, 5)
 travel_theme = st.selectbox(
     "🎭 Select Your Travel Theme:",
     ["💑 Couple Getaway", "👨‍👩‍👧‍👦 Family Vacation", "🏔️ Adventure Trip", "🧳 Solo Exploration"]
 )
-
 st.markdown("---")
 st.markdown(
     f"""
@@ -58,14 +55,11 @@ activity_preferences = st.text_area(
 )
 departure_date = st.date_input("Departure Date")
 return_date = st.date_input("Return Date")
-
 st.sidebar.title("🌎 Travel Assistant")
 st.sidebar.subheader("Personalize Your Trip")
-
 budget = st.sidebar.radio("💰 Budget Preference:", ["Economy", "Standard", "Luxury"])
 flight_class = st.sidebar.radio("✈️ Flight Class:", ["Economy", "Business", "First Class"])
 hotel_rating = st.sidebar.selectbox("🏨 Preferred Hotel Rating:", ["Any", "3⭐", "4⭐", "5⭐"])
-
 st.sidebar.subheader("🎒 Packing Checklist")
 packing_list = {
     "👕 Clothes": True,
@@ -76,16 +70,14 @@ packing_list = {
 }
 for item, checked in packing_list.items():
     st.sidebar.checkbox(item, value=checked)
-
 st.sidebar.subheader("🛂 Travel Essentials")
 visa_required = st.sidebar.checkbox("🛃 Check Visa Requirements")
 travel_insurance = st.sidebar.checkbox("🛡️ Get Travel Insurance")
 currency_converter = st.sidebar.checkbox("💱 Currency Exchange Rates")
 
-SERPAPI_KEY = ""
-GOOGLE_API_KEY = ""
+SERPAPI_KEY = "---------------"
+GOOGLE_API_KEY = "---------------"
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-
 
 def fetch_flights(source, destination, departure_date, return_date):
     params = {
@@ -102,14 +94,39 @@ def fetch_flights(source, destination, departure_date, return_date):
     results = search.get_dict()
     return results, params
 
-
 def extract_cheapest_flights(flight_data):
     best_flights = flight_data.get("best_flights", [])
     sorted_flights = sorted(best_flights, key=lambda x: x.get("price", float("inf")))[:3]
     return sorted_flights
 
+def run_agent_with_retry(agent, prompt, max_retries=3, wait_seconds=60):
+    """Run an agent with automatic retry on 429 rate limit errors."""
+    for attempt in range(max_retries):
+        try:
+            result = agent.run(prompt, stream=False)
+            content = result.content if hasattr(result, 'content') else str(result)
+            if isinstance(content, str) and '"code": 429' in content:
+                if attempt < max_retries - 1:
+                    st.warning(f"⏳ Rate limit hit. Waiting {wait_seconds}s before retry {attempt + 2}/{max_retries}...")
+                    time.sleep(wait_seconds)
+                    continue
+                else:
+                    st.error("❌ Rate limit exceeded after all retries. Please wait a few minutes and try again.")
+                    return result
+            return result
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                if attempt < max_retries - 1:
+                    st.warning(f"⏳ Rate limit hit. Waiting {wait_seconds}s before retry {attempt + 2}/{max_retries}...")
+                    time.sleep(wait_seconds)
+                else:
+                    st.error("❌ Rate limit exceeded after all retries. Please wait a few minutes and try again.")
+                    raise
+            else:
+                raise
 
-# Inject current datetime manually into agent instructions (replaces add_datetime_to_instructions)
+# Inject current datetime manually into agent instructions
 current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 researcher = Agent(
@@ -123,10 +140,9 @@ researcher = Agent(
         "Prioritize information from reliable sources and official travel guides.",
         "Provide well-structured summaries with key insights and recommendations."
     ],
-    model=Gemini(id="gemini-2.0-flash-exp"),
+    model=Gemini(id="gemini-2.5-flash"),
     tools=[SerpApiTools(api_key=SERPAPI_KEY)],
 )
-
 planner = Agent(
     name="Planner",
     instructions=[
@@ -137,9 +153,8 @@ planner = Agent(
         "Optimize the schedule for convenience and enjoyment.",
         "Present the itinerary in a structured format."
     ],
-    model=Gemini(id="gemini-2.0-flash-exp"),
+    model=Gemini(id="gemini-2.5-flash"),
 )
-
 hotel_restaurant_finder = Agent(
     name="Hotel & Restaurant Finder",
     instructions=[
@@ -150,10 +165,9 @@ hotel_restaurant_finder = Agent(
         "Prioritize results based on user preferences, ratings, and availability.",
         "Provide direct booking links or reservation options where possible."
     ],
-    model=Gemini(id="gemini-2.0-flash-exp"),
+    model=Gemini(id="gemini-2.5-flash"),
     tools=[SerpApiTools(api_key=SERPAPI_KEY)],
 )
-
 
 if st.button("🚀 Generate Travel Plan"):
     with st.spinner("✈️ Fetching best flight options..."):
@@ -166,14 +180,20 @@ if st.button("🚀 Generate Travel Plan"):
             f"The traveler enjoys: {activity_preferences}. Budget: {budget}. Flight Class: {flight_class}. "
             f"Hotel Rating: {hotel_rating}. Visa Requirement: {visa_required}. Travel Insurance: {travel_insurance}."
         )
-        research_results = researcher.run(research_prompt, stream=False)
+        research_results = run_agent_with_retry(researcher, research_prompt)
+
+    with st.spinner("⏳ Preparing hotel & restaurant search (avoiding rate limits)..."):
+        time.sleep(15)
 
     with st.spinner("🏨 Searching for hotels & restaurants..."):
         hotel_restaurant_prompt = (
             f"Find the best hotels and restaurants near popular attractions in {destination} for a {travel_theme.lower()} trip. "
             f"Budget: {budget}. Hotel Rating: {hotel_rating}. Preferred activities: {activity_preferences}."
         )
-        hotel_restaurant_results = hotel_restaurant_finder.run(hotel_restaurant_prompt, stream=False)
+        hotel_restaurant_results = run_agent_with_retry(hotel_restaurant_finder, hotel_restaurant_prompt)
+
+    with st.spinner("⏳ Preparing itinerary generation (avoiding rate limits)..."):
+        time.sleep(15)
 
     with st.spinner("🗺️ Creating your personalized itinerary..."):
         planning_prompt = (
@@ -182,7 +202,7 @@ if st.button("🚀 Generate Travel Plan"):
             f"Visa Requirement: {visa_required}. Travel Insurance: {travel_insurance}. Research: {research_results.content}. "
             f"Flights: {json.dumps(cheapest_flights)}. Hotels & Restaurants: {hotel_restaurant_results.content}."
         )
-        itinerary = planner.run(planning_prompt, stream=False)
+        itinerary = run_agent_with_retry(planner, planning_prompt)
 
     st.subheader("✈️ Cheapest Flight Options")
     if cheapest_flights:
@@ -196,10 +216,8 @@ if st.button("🚀 Generate Travel Plan"):
                 airline_name = flights_info[0].get("airline", "Unknown Airline")
                 price = flight.get("price", "Not Available")
                 total_duration = flight.get("total_duration", "N/A")
-
                 departure_time = format_datetime(departure.get("time", "N/A"))
                 arrival_time = format_datetime(arrival.get("time", "N/A"))
-
                 booking_link = "#"
                 departure_token = flight.get("departure_token", "")
                 if departure_token:
@@ -212,7 +230,6 @@ if st.button("🚀 Generate Travel Plan"):
                             booking_link = f"https://www.google.com/travel/flights?tfs={booking_token}"
                     except Exception:
                         booking_link = "#"
-
                 st.markdown(
                     f"""
                     <div style="border: 2px solid #ddd; border-radius: 10px; padding: 15px;
@@ -239,8 +256,6 @@ if st.button("🚀 Generate Travel Plan"):
 
     st.subheader("🏨 Hotels & Restaurants")
     st.write(hotel_restaurant_results.content)
-
     st.subheader("🗺️ Your Personalized Itinerary")
     st.write(itinerary.content)
-
     st.success("✅ Travel plan generated successfully!")

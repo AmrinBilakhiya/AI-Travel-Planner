@@ -1,5 +1,7 @@
 # AI Travel Planner (Streamlit + Gemini + SerpAPI)
 
+https://ai-travel-planner-bqf2xxeq5yggt3ufuunmkg.streamlit.app/
+
 An intelligent travel planning web application that generates personalized itineraries using AI, live flight data, and destination insights.
 
 ---
